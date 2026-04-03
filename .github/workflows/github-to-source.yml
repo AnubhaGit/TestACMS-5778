@@ -1,0 +1,134 @@
+name: GitHub to Source
+
+on:
+  push:
+    paths:
+      - 'components/**'
+    branches:
+      - '**'
+
+concurrency:
+  group: github-to-source-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  upload-to-source-cms:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check required secrets
+        id: check-secrets
+        run: |
+          if [ -z "$CANVAS_SITE_URL" ] || [ -z "$CANVAS_CLIENT_ID" ] || [ -z "$CANVAS_CLIENT_SECRET" ]; then
+            echo "Required secrets are not configured. Skipping."
+            echo "secrets_configured=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "secrets_configured=true" >> "$GITHUB_OUTPUT"
+          fi
+        env:
+          CANVAS_SITE_URL: ${{ secrets.MAIN__CANVAS_SITE_URL }}
+          CANVAS_CLIENT_ID: ${{ secrets.MAIN__CANVAS_CLIENT_ID }}
+          CANVAS_CLIENT_SECRET: ${{ secrets.MAIN__CANVAS_CLIENT_SECRET }}
+
+      - uses: actions/checkout@v4
+        if: steps.check-secrets.outputs.secrets_configured == 'true'
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        if: steps.check-secrets.outputs.secrets_configured == 'true'
+        with:
+          node-version: '20'
+
+      - name: Determine changed components
+        if: steps.check-secrets.outputs.secrets_configured == 'true'
+        id: changed
+        run: |
+          set -euo pipefail
+
+          # If this is the first commit on a new branch, BEFORE can be all zeros.
+          if [[ "$BEFORE" == "0000000000000000000000000000000000000000" ]]; then
+            echo "First push detected. Will upload all components."
+            echo "components_csv=" >> "$GITHUB_OUTPUT"
+            echo "upload_all=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "Diffing: $BEFORE..$AFTER"
+
+          # List files changed under components/, extract top-level component directory name.
+          all_changed="$(
+            git diff --name-only "$BEFORE" "$AFTER" -- 'components/' \
+              | awk -F/ 'NF>=2 {print $2}' \
+              | sort -u
+          )"
+
+          if [[ -z "$all_changed" ]]; then
+            echo "No component-level changes detected."
+            echo "components_csv=" >> "$GITHUB_OUTPUT"
+            echo "upload_all=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Separate into existing (modified/added) and deleted components.
+          uploadable=()
+          deleted=()
+          while IFS= read -r component; do
+            if [[ -d "components/$component" ]]; then
+              uploadable+=("$component")
+            else
+              deleted+=("$component")
+            fi
+          done <<< "$all_changed"
+
+          if [[ ${#deleted[@]} -gt 0 ]]; then
+            echo "Deleted components (skipping, deletion not supported by CLI): ${deleted[*]}"
+          fi
+
+          if [[ ${#uploadable[@]} -eq 0 ]]; then
+            echo "All changed components were deletions: ${deleted[*]}. Nothing to upload."
+            echo "components_csv=" >> "$GITHUB_OUTPUT"
+            echo "upload_all=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          components_csv="$(IFS=,; echo "${uploadable[*]}")"
+          echo "Components to upload: $components_csv"
+          echo "components_csv=$components_csv" >> "$GITHUB_OUTPUT"
+          echo "upload_all=false" >> "$GITHUB_OUTPUT"
+        env:
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.sha }}
+
+      - name: Upload all components (first push or no diff)
+        if: >-
+          steps.check-secrets.outputs.secrets_configured == 'true'
+          && (steps.changed.outputs.upload_all == 'true' || steps.changed.outputs.components_csv == '')
+        run: |
+          if [[ "$UPLOAD_ALL" == "true" ]]; then
+            echo "First push to branch. Uploading all components."
+          else
+            echo "No changed components detected under components/. Skipping upload."
+            exit 0
+          fi
+          npx @drupal-canvas/cli@0.7.3 upload --all --yes --dir components
+        env:
+          UPLOAD_ALL: ${{ steps.changed.outputs.upload_all }}
+          CANVAS_SITE_URL: ${{ secrets.MAIN__CANVAS_SITE_URL }}
+          CANVAS_CLIENT_ID: ${{ secrets.MAIN__CANVAS_CLIENT_ID }}
+          CANVAS_CLIENT_SECRET: ${{ secrets.MAIN__CANVAS_CLIENT_SECRET }}
+
+      - name: Upload changed components
+        if: >-
+          steps.check-secrets.outputs.secrets_configured == 'true'
+          && steps.changed.outputs.upload_all == 'false'
+          && steps.changed.outputs.components_csv != ''
+        run: |
+          echo "Uploading changed components: $COMPONENTS_CSV"
+          npx @drupal-canvas/cli@0.7.3 upload --components "$COMPONENTS_CSV" --yes --dir components
+        env:
+          COMPONENTS_CSV: ${{ steps.changed.outputs.components_csv }}
+          CANVAS_SITE_URL: ${{ secrets.MAIN__CANVAS_SITE_URL }}
+          CANVAS_CLIENT_ID: ${{ secrets.MAIN__CANVAS_CLIENT_ID }}
+          CANVAS_CLIENT_SECRET: ${{ secrets.MAIN__CANVAS_CLIENT_SECRET }}
