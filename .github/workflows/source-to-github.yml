@@ -76,9 +76,9 @@ jobs:
           fi
         env:
           RAW_COMPONENTS: ${{ github.event.inputs.components }}
-          CANVAS_SITE_URL: ${{ secrets.MAIN__CANVAS_SITE_URL }}
-          CANVAS_CLIENT_ID: ${{ secrets.MAIN__CANVAS_CLIENT_ID }}
-          CANVAS_CLIENT_SECRET: ${{ secrets.MAIN__CANVAS_CLIENT_SECRET }}
+          CANVAS_SITE_URL: ${{ secrets.DEV__CANVAS_SITE_URL }}
+          CANVAS_CLIENT_ID: ${{ secrets.DEV__CANVAS_CLIENT_ID }}
+          CANVAS_CLIENT_SECRET: ${{ secrets.DEV__CANVAS_CLIENT_SECRET }}
 
       - name: Commit and push if there are changes
         run: |
