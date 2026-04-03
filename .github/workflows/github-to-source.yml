@@ -27,9 +27,9 @@ jobs:
             echo "secrets_configured=true" >> "$GITHUB_OUTPUT"
           fi
         env:
-          CANVAS_SITE_URL: ${{ secrets.MAIN__CANVAS_SITE_URL }}
-          CANVAS_CLIENT_ID: ${{ secrets.MAIN__CANVAS_CLIENT_ID }}
-          CANVAS_CLIENT_SECRET: ${{ secrets.MAIN__CANVAS_CLIENT_SECRET }}
+          CANVAS_SITE_URL: ${{ secrets.DEV__CANVAS_SITE_URL }}
+          CANVAS_CLIENT_ID: ${{ secrets.DEV__CANVAS_CLIENT_ID }}
+          CANVAS_CLIENT_SECRET: ${{ secrets.DEV__CANVAS_CLIENT_SECRET }}
 
       - uses: actions/checkout@v4
         if: steps.check-secrets.outputs.secrets_configured == 'true'
@@ -115,9 +115,9 @@ jobs:
           npx @drupal-canvas/cli@0.7.3 upload --all --yes --dir components
         env:
           UPLOAD_ALL: ${{ steps.changed.outputs.upload_all }}
-          CANVAS_SITE_URL: ${{ secrets.MAIN__CANVAS_SITE_URL }}
-          CANVAS_CLIENT_ID: ${{ secrets.MAIN__CANVAS_CLIENT_ID }}
-          CANVAS_CLIENT_SECRET: ${{ secrets.MAIN__CANVAS_CLIENT_SECRET }}
+          CANVAS_SITE_URL: ${{ secrets.DEV__CANVAS_SITE_URL }}
+          CANVAS_CLIENT_ID: ${{ secrets.DEV__CANVAS_CLIENT_ID }}
+          CANVAS_CLIENT_SECRET: ${{ secrets.DEV__CANVAS_CLIENT_SECRET }}
 
       - name: Upload changed components
         if: >-
@@ -129,6 +129,6 @@ jobs:
           npx @drupal-canvas/cli@0.7.3 upload --components "$COMPONENTS_CSV" --yes --dir components
         env:
           COMPONENTS_CSV: ${{ steps.changed.outputs.components_csv }}
-          CANVAS_SITE_URL: ${{ secrets.MAIN__CANVAS_SITE_URL }}
-          CANVAS_CLIENT_ID: ${{ secrets.MAIN__CANVAS_CLIENT_ID }}
-          CANVAS_CLIENT_SECRET: ${{ secrets.MAIN__CANVAS_CLIENT_SECRET }}
+          CANVAS_SITE_URL: ${{ secrets.DEV__CANVAS_SITE_URL }}
+          CANVAS_CLIENT_ID: ${{ secrets.DEV__CANVAS_CLIENT_ID }}
+          CANVAS_CLIENT_SECRET: ${{ secrets.DEV__CANVAS_CLIENT_SECRET }}
