@@ -1,0 +1,101 @@
+name: Source to GitHub
+
+on:
+  workflow_dispatch:
+    inputs:
+      commit_message:
+        description: 'Commit message'
+        required: false
+        default: 'Sync components from Source CMS'
+      author_name:
+        description: 'Git Author Name'
+        required: false
+        default: 'github-actions'
+      author_email:
+        description: 'Git Author Email'
+        required: false
+        default: 'github-actions@github.com'
+      committer_name:
+        description: 'Git Committer Name'
+        required: false
+        default: 'Source CMS'
+      committer_email:
+        description: 'Git Committer Email'
+        required: false
+        default: 'no-reply.source-cms@acquia.com'
+      components:
+        description: 'Comma-separated list of component machine names to sync (leave empty to sync all)'
+        required: false
+        default: ''
+
+concurrency:
+  group: source-to-github-${{ github.ref_name }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  download-from-source-cms:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+          persist-credentials: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Canvas Download (Pull from Source CMS)
+        run: |
+          set -euo pipefail
+
+          # Normalize:
+          # - remove ALL whitespace
+          # - remove leading/trailing commas
+          # - collapse repeated commas
+          components="$(echo "$RAW_COMPONENTS" | tr -d '[:space:]' | sed -E 's/^,+//; s/,+$//; s/,+/,/g')"
+
+          # Validate: allow empty, or comma-separated tokens of [A-Za-z0-9_-]
+          if [[ -n "$components" ]] && ! [[ "$components" =~ ^[A-Za-z0-9_-]+(,[A-Za-z0-9_-]+)*$ ]]; then
+            echo "Invalid components input: '$RAW_COMPONENTS'"
+            echo "After normalization: '$components'"
+            echo "Expected format: button,card,hero (allowed chars: A-Z a-z 0-9 _ -)"
+            exit 1
+          fi
+
+          if [[ -z "$components" ]]; then
+            echo "No specific components provided. Downloading all components."
+            npx @drupal-canvas/cli@0.7.3 download --dir components --all --yes
+          else
+            echo "Downloading specific components: $components"
+            npx @drupal-canvas/cli@0.7.3 download --dir components --components "$components" --yes
+          fi
+        env:
+          RAW_COMPONENTS: ${{ github.event.inputs.components }}
+          CANVAS_SITE_URL: ${{ secrets.MAIN__CANVAS_SITE_URL }}
+          CANVAS_CLIENT_ID: ${{ secrets.MAIN__CANVAS_CLIENT_ID }}
+          CANVAS_CLIENT_SECRET: ${{ secrets.MAIN__CANVAS_CLIENT_SECRET }}
+
+      - name: Commit and push if there are changes
+        run: |
+          set -euo pipefail
+          git add components/
+          if git diff-index --quiet HEAD; then
+            echo "No changes to commit."
+            exit 0
+          fi
+          git -c user.name="$COMMITTER_NAME" \
+              -c user.email="$COMMITTER_EMAIL" \
+              commit --author="$AUTHOR_NAME <$AUTHOR_EMAIL>" \
+              -m "$COMMIT_MESSAGE"
+          git push
+        env:
+          COMMIT_MESSAGE: ${{ github.event.inputs.commit_message }}
+          AUTHOR_NAME: ${{ github.event.inputs.author_name }}
+          AUTHOR_EMAIL: ${{ github.event.inputs.author_email }}
+          COMMITTER_NAME: ${{ github.event.inputs.committer_name }}
+          COMMITTER_EMAIL: ${{ github.event.inputs.committer_email }}
